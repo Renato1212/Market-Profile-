@@ -2,6 +2,9 @@ import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 
 export default defineConfig({
+  // VITE_BASE_URL is set to '/market-profile-/' for GitHub Pages builds;
+  // defaults to '/' for Docker/Render production builds.
+  base: process.env.VITE_BASE_URL || '/',
   plugins: [react()],
   server: {
     port: 3000,

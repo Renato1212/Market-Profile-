@@ -114,11 +114,20 @@ export function APeriodTracker() {
       {/* A Period Metrics */}
       {ap && (
         <MetricGrid cols={3}>
-          <Metric label="A Range" value={ap.a_range.toFixed(2)} sub="pts" />
-          <Metric label="Close Pos" value={`${ap.a_close_position.toFixed(1)}%`} color={
-            ap.a_close_position > 66 ? '#10D982' : ap.a_close_position < 34 ? '#FF3855' : '#6B7B95'
-          } />
-          <Metric label="Body/Range" value={`${(ap.a_body_vs_range * 100).toFixed(0)}%`} />
+          <Metric label="A Range" value={ap.a_range != null ? ap.a_range.toFixed(2) : '—'} sub="pts" />
+          <Metric
+            label="Close Pos"
+            value={ap.a_close_position != null ? `${ap.a_close_position.toFixed(1)}%` : '—'}
+            color={
+              ap.a_close_position != null
+                ? ap.a_close_position > 66 ? '#10D982' : ap.a_close_position < 34 ? '#FF3855' : '#6B7B95'
+                : '#6B7B95'
+            }
+          />
+          <Metric
+            label="Body/Range"
+            value={ap.a_body_vs_range != null ? `${(ap.a_body_vs_range * 100).toFixed(0)}%` : '—'}
+          />
         </MetricGrid>
       )}
 

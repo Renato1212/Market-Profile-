@@ -9,6 +9,7 @@ import { DataView } from './views/DataView'
 import { LandingPage } from './views/LandingPage'
 import { ESPriceHeader } from './components/live/ESPriceHeader'
 import { ComplianceFooter } from './components/ui/ComplianceFooter'
+import { ErrorBoundary } from './components/ui/ErrorBoundary'
 
 const NAV_ITEMS = [
   { to: '/live', icon: Home, label: 'Live' },
@@ -69,5 +70,9 @@ export default function App() {
 
   if (isLanding) return <LandingPage />
 
-  return <AppShell />
+  return (
+    <ErrorBoundary>
+      <AppShell />
+    </ErrorBoundary>
+  )
 }

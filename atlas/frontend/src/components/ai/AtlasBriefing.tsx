@@ -27,7 +27,13 @@ export function AtlasBriefing() {
         <Bot size={16} className="text-blue" />
         <span className="text-[11px] uppercase tracking-wider text-text-secondary">Today's Pre-Market Briefing</span>
         <button
-          onClick={() => { setLoading(true); fetchTodayBriefing().then((r) => { setBriefing(r.data.content); setLoading(false) }) }}
+          onClick={() => {
+            setLoading(true)
+            fetchTodayBriefing()
+              .then((r) => setBriefing(r.data.content))
+              .catch(() => setBriefing(null))
+              .finally(() => setLoading(false))
+          }}
           className="ml-auto text-text-secondary hover:text-text-primary"
         >
           <RefreshCw size={12} />

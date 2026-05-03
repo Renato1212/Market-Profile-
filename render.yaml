@@ -1,0 +1,25 @@
+services:
+  - type: web
+    name: atlas-es-platform
+    env: docker
+    dockerfilePath: ./Dockerfile.fullstack
+    dockerContext: .
+    plan: free
+    healthCheckPath: /health
+    envVars:
+      - key: DATABASE_URL
+        value: sqlite+aiosqlite:////data/atlas.db
+      - key: ENVIRONMENT
+        value: production
+      - key: CORS_ORIGINS
+        value: ""
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      - key: FRED_API_KEY
+        sync: false
+      - key: TRADIER_SANDBOX_TOKEN
+        sync: false
+    disk:
+      name: atlas-data
+      mountPath: /data
+      sizeGB: 1

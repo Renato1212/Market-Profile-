@@ -22,15 +22,17 @@ const NAV_ITEMS = [
 function AppShell() {
   return (
     <div className="flex flex-col min-h-screen bg-bg">
-      <ESPriceHeader />
+      <ErrorBoundary compact fallbackTitle="Header unavailable">
+        <ESPriceHeader />
+      </ErrorBoundary>
 
       <main className="flex-1 overflow-y-auto px-4 pt-4 pb-20 max-w-2xl mx-auto w-full">
         <Routes>
-          <Route path="/live" element={<LiveView />} />
-          <Route path="/stats" element={<StatsView />} />
-          <Route path="/flow" element={<FlowView />} />
-          <Route path="/atlas" element={<AtlasView />} />
-          <Route path="/data" element={<DataView />} />
+          <Route path="/live" element={<ErrorBoundary><LiveView /></ErrorBoundary>} />
+          <Route path="/stats" element={<ErrorBoundary><StatsView /></ErrorBoundary>} />
+          <Route path="/flow" element={<ErrorBoundary><FlowView /></ErrorBoundary>} />
+          <Route path="/atlas" element={<ErrorBoundary><AtlasView /></ErrorBoundary>} />
+          <Route path="/data" element={<ErrorBoundary><DataView /></ErrorBoundary>} />
           <Route path="*" element={<Navigate to="/live" replace />} />
         </Routes>
         <ComplianceFooter />

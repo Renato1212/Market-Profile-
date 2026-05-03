@@ -57,9 +57,13 @@ export function ESPriceHeader() {
             'text-sm font-mono',
             (es?.change ?? 0) > 0 ? 'change-positive' : (es?.change ?? 0) < 0 ? 'change-negative' : 'change-neutral'
           )}>
-            {es?.change != null ? (
-              `${es.change > 0 ? '+' : ''}${es.change.toFixed(2)} (${es.change_pct > 0 ? '+' : ''}${es.change_pct.toFixed(2)}%)`
-            ) : '—'}
+            {es?.change != null
+              ? `${es.change > 0 ? '+' : ''}${es.change.toFixed(2)}${
+                  es.change_pct != null
+                    ? ` (${es.change_pct > 0 ? '+' : ''}${es.change_pct.toFixed(2)}%)`
+                    : ''
+                }`
+              : '—'}
           </div>
         </div>
 

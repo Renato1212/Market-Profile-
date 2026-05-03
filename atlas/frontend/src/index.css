@@ -1,0 +1,81 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: dark;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background-color: #050811;
+  color: #E8EDF7;
+  font-family: 'Inter', system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  overscroll-behavior-y: none;
+}
+
+/* Monospace numbers */
+.font-mono {
+  font-family: 'JetBrains Mono', Consolas, monospace;
+}
+
+/* Scrollbars */
+::-webkit-scrollbar { width: 4px; height: 4px; }
+::-webkit-scrollbar-track { background: #0D1424; }
+::-webkit-scrollbar-thumb { background: #1E2A3F; border-radius: 2px; }
+::-webkit-scrollbar-thumb:hover { background: #2E3A4F; }
+
+/* Price changes */
+.change-positive { color: #10D982; }
+.change-negative { color: #FF3855; }
+.change-neutral { color: #6B7B95; }
+
+/* Level colors */
+.level-call-wall { color: #FFB800; border-color: #FFB800; }
+.level-put-wall { color: #00E5A0; border-color: #00E5A0; }
+.level-zero-gamma { color: #FF8C42; border-color: #FF8C42; }
+.level-pdh-pdl { color: #4D9FFF; border-color: #4D9FFF; }
+.level-value-area { color: #A855F7; border-color: #A855F7; }
+
+/* Regime badges */
+.regime-long { background: rgba(16,217,130,0.15); color: #10D982; border: 1px solid rgba(16,217,130,0.3); }
+.regime-short { background: rgba(255,56,85,0.15); color: #FF3855; border: 1px solid rgba(255,56,85,0.3); }
+.regime-neutral { background: rgba(255,140,66,0.15); color: #FF8C42; border: 1px solid rgba(255,140,66,0.3); }
+
+/* Confidence badges */
+.conf-high { color: #10D982; }
+.conf-medium { color: #FFB800; }
+.conf-low { color: #FF3855; }
+.conf-insufficient { color: #6B7B95; }
+
+/* Cards */
+.atlas-card {
+  background: #0D1424;
+  border: 1px solid #1E2A3F;
+  border-radius: 1rem;
+  padding: 1rem;
+}
+
+/* Pulse animation for live data */
+@keyframes live-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+.live-indicator {
+  animation: live-pulse 2s ease-in-out infinite;
+}
+
+/* Mobile safe areas */
+@supports (padding: max(0px)) {
+  .safe-bottom { padding-bottom: max(0.5rem, env(safe-area-inset-bottom)); }
+}
+
+/* Chart tooltip */
+.recharts-tooltip-wrapper {
+  outline: none !important;
+}

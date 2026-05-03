@@ -1,6 +1,6 @@
 """Market data API routes — live prices, macro, COT."""
 from fastapi import APIRouter, HTTPException, Query
-from typing import Optional
+from services.data_fetchers.cache_layer import get_cached, set_cached
 
 router = APIRouter()
 
@@ -12,7 +12,7 @@ async def get_market_snapshot():
     from services.data_fetchers.yahoo_fetcher import (
         fetch_vix_term_structure, fetch_crypto_overnight, fetch_dxy_overnight, fetch_yahoo
     )
-    from services.data_fetchers.cache_layer import get_cached, set_cached
+    from datetime import datetime
 
     cached = await get_cached("market_snapshot")
     if cached:
@@ -28,8 +28,7 @@ async def get_market_snapshot():
     )
     es_bars, vix, crypto, dxy, gex = [t if not isinstance(t, Exception) else None for t in tasks]
 
-    es_price = None
-    es_change = None
+    es_price = es_change = es_change_pct = None
     if es_bars is not None and len(es_bars) >= 2:
         es_price = round(float(es_bars.iloc[-1]["close"]), 2)
         es_prev = round(float(es_bars.iloc[0]["open"]), 2)
@@ -37,17 +36,13 @@ async def get_market_snapshot():
         es_change_pct = round(es_change / es_prev * 100, 3) if es_prev else 0
 
     result = {
-        "es": {
-            "price": es_price,
-            "change": es_change,
-            "change_pct": es_change_pct if es_price else 0,
-        },
+        "es": {"price": es_price, "change": es_change, "change_pct": es_change_pct or 0},
         "vix": vix or {},
         "crypto": crypto or {},
         "dxy": dxy or {},
         "gex_regime": (gex or {}).get("regime"),
         "gex_net": (gex or {}).get("net_gex"),
-        "timestamp": __import__("datetime").datetime.utcnow().isoformat(),
+        "timestamp": datetime.utcnow().isoformat(),
     }
 
     await set_cached("market_snapshot", result, ttl_seconds=60)
@@ -58,7 +53,6 @@ async def get_market_snapshot():
 async def get_macro_data():
     """Get all FRED macro data."""
     from services.data_fetchers.fred_fetcher import fetch_all_macro
-    from services.data_fetchers.cache_layer import get_cached, set_cached
     from config import settings
 
     cached = await get_cached("macro_data")
@@ -77,7 +71,6 @@ async def get_macro_data():
 async def get_cot_data():
     """Get CFTC COT positioning data for ES."""
     from services.data_fetchers.cftc_fetcher import get_es_cot_analysis
-    from services.data_fetchers.cache_layer import get_cached, set_cached
 
     cached = await get_cached("cot_data")
     if cached:
@@ -92,7 +85,6 @@ async def get_cot_data():
 async def get_daily_ohlcv(symbol: str = "ES=F", years: int = Query(5, ge=1, le=12)):
     """Get daily OHLCV history."""
     from services.data_fetchers.yahoo_fetcher import fetch_yahoo
-    from services.data_fetchers.cache_layer import get_cached, set_cached
 
     cache_key = f"daily_ohlcv_{symbol}_{years}"
     cached = await get_cached(cache_key)

@@ -45,7 +45,7 @@ async def get_gap_tables(
 
 @router.get("/calculator")
 async def gap_fill_calculator(
-    direction: str = Query(..., regex="^(up|down)$"),
+    direction: str = Query(..., pattern="^(up|down)$"),
     size_pts: float = Query(..., gt=0),
     day_of_week: Optional[int] = Query(None, ge=0, le=4),
     vix: Optional[float] = Query(None),

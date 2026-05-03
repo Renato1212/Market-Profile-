@@ -10,7 +10,9 @@ import pytz
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, FileResponse
+from fastapi.staticfiles import StaticFiles
+import os
 
 from config import settings
 from models.database import init_db
@@ -115,3 +117,16 @@ async def websocket_live(websocket: WebSocket):
 
 
 app.state.ws_manager = manager
+
+# Serve React frontend from /frontend/dist — must come LAST after all API routes
+FRONTEND_DIST = os.path.join(os.path.dirname(__file__), "..", "frontend", "dist")
+if os.path.isdir(FRONTEND_DIST):
+    app.mount("/assets", StaticFiles(directory=os.path.join(FRONTEND_DIST, "assets")), name="assets")
+
+    @app.get("/{full_path:path}", include_in_schema=False)
+    async def serve_spa(full_path: str):
+        """Serve React SPA — all non-API routes return index.html."""
+        if full_path.startswith("api/") or full_path.startswith("ws/"):
+            return JSONResponse({"error": "not found"}, status_code=404)
+        index = os.path.join(FRONTEND_DIST, "index.html")
+        return FileResponse(index)

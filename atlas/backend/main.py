@@ -23,17 +23,21 @@ logger = logging.getLogger(__name__)
 
 ET = pytz.timezone("America/New_York")
 
+# Vercel (and other FaaS platforms) set VERCEL=1. In serverless mode we skip
+# APScheduler because there is no persistent process to run background jobs.
+IS_SERVERLESS = bool(os.getenv("VERCEL"))
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    logger.info("ATLAS backend starting up...")
+    logger.info("ATLAS backend starting up (serverless=%s)...", IS_SERVERLESS)
     await init_db()
     logger.info("Database initialized")
 
-    # Start background jobs
-    from jobs.scheduler import start_scheduler
-    scheduler = await start_scheduler()
-    app.state.scheduler = scheduler
+    if not IS_SERVERLESS:
+        from jobs.scheduler import start_scheduler
+        scheduler = await start_scheduler()
+        app.state.scheduler = scheduler
 
     yield
 
@@ -58,12 +62,12 @@ app.add_middleware(
 )
 
 # Mount routers
-app.include_router(gap_router, prefix="/api/gap", tags=["Gap Fill"])
+app.include_router(gap_router,     prefix="/api/gap",     tags=["Gap Fill"])
 app.include_router(aperiod_router, prefix="/api/aperiod", tags=["A Period"])
 app.include_router(options_router, prefix="/api/options", tags=["Options/GEX"])
-app.include_router(ai_router, prefix="/api/ai", tags=["AI Copilot"])
-app.include_router(data_router, prefix="/api/data", tags=["Market Data"])
-app.include_router(live_router, prefix="/api/live", tags=["Live"])
+app.include_router(ai_router,      prefix="/api/ai",      tags=["AI Copilot"])
+app.include_router(data_router,    prefix="/api/data",    tags=["Market Data"])
+app.include_router(live_router,    prefix="/api/live",    tags=["Live"])
 
 
 @app.get("/health")
@@ -109,7 +113,6 @@ async def websocket_live(websocket: WebSocket):
     await manager.connect(websocket)
     try:
         while True:
-            # Keep alive ping
             await asyncio.sleep(30)
             await websocket.send_json({"type": "ping", "ts": datetime.utcnow().isoformat()})
     except WebSocketDisconnect:
@@ -118,19 +121,20 @@ async def websocket_live(websocket: WebSocket):
 
 app.state.ws_manager = manager
 
-# Serve React frontend — check both dev layout (../frontend/dist) and
-# container layout (./frontend/dist) so one binary works everywhere.
-_base = os.path.dirname(os.path.abspath(__file__))
-FRONTEND_DIST = os.path.join(_base, "..", "frontend", "dist")
-if not os.path.isdir(FRONTEND_DIST):
-    FRONTEND_DIST = os.path.join(_base, "frontend", "dist")
-if os.path.isdir(FRONTEND_DIST):
-    app.mount("/assets", StaticFiles(directory=os.path.join(FRONTEND_DIST, "assets")), name="assets")
+# Serve React frontend in Docker/Render mode (not needed on Vercel — static
+# files are served by Vercel's CDN directly from atlas/frontend/dist).
+if not IS_SERVERLESS:
+    _base = os.path.dirname(os.path.abspath(__file__))
+    FRONTEND_DIST = os.path.join(_base, "..", "frontend", "dist")
+    if not os.path.isdir(FRONTEND_DIST):
+        FRONTEND_DIST = os.path.join(_base, "frontend", "dist")
+    if os.path.isdir(FRONTEND_DIST):
+        app.mount("/assets", StaticFiles(directory=os.path.join(FRONTEND_DIST, "assets")), name="assets")
 
-    @app.get("/{full_path:path}", include_in_schema=False)
-    async def serve_spa(full_path: str):
-        """Serve React SPA — all non-API routes return index.html."""
-        if full_path.startswith("api/") or full_path.startswith("ws/"):
-            return JSONResponse({"error": "not found"}, status_code=404)
-        index = os.path.join(FRONTEND_DIST, "index.html")
-        return FileResponse(index)
+        @app.get("/{full_path:path}", include_in_schema=False)
+        async def serve_spa(full_path: str):
+            """Serve React SPA — all non-API routes return index.html."""
+            if full_path.startswith("api/") or full_path.startswith("ws/"):
+                return JSONResponse({"error": "not found"}, status_code=404)
+            index = os.path.join(FRONTEND_DIST, "index.html")
+            return FileResponse(index)

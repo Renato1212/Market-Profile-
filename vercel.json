@@ -1,0 +1,13 @@
+{
+  "version": 2,
+  "buildCommand": "cd atlas/frontend && npm install && npm run build",
+  "outputDirectory": "atlas/frontend/dist",
+  "rewrites": [
+    { "source": "/api/:path*", "destination": "/api/index" },
+    { "source": "/(.*)",       "destination": "/" }
+  ],
+  "env": {
+    "DATABASE_URL": "sqlite+aiosqlite:////tmp/atlas.db",
+    "ENVIRONMENT":  "production"
+  }
+}

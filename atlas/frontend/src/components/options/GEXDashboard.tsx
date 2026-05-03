@@ -26,7 +26,7 @@ export function GEXDashboard() {
   if (loading) return <div className="space-y-4 animate-pulse"><div className="atlas-card h-32" /><div className="atlas-card h-48" /></div>
   if (!data) return <div className="atlas-card text-center py-8 text-text-secondary">GEX data unavailable</div>
 
-  const regimeDetail = data.regime_detail
+  const regimeDetail = data.regime_detail ?? { color: '#6B7B95', description: '', volatility_bias: '—', trading_style: '—' }
   const chartData = data.strikes
     .filter((s) => Math.abs(s.strike - data.spot_price) / data.spot_price <= 0.05)
     .map((s) => ({
@@ -45,7 +45,7 @@ export function GEXDashboard() {
           <div className="text-right">
             <div className="text-[10px] text-text-secondary uppercase tracking-wider">Net GEX</div>
             <div className="text-xl font-mono font-bold" style={{ color: regimeDetail.color }}>
-              {data.net_gex > 0 ? '+' : ''}{data.net_gex.toFixed(2)}B
+              {data.net_gex != null ? `${data.net_gex > 0 ? '+' : ''}${data.net_gex.toFixed(2)}B` : '—'}
             </div>
           </div>
         </div>
@@ -102,8 +102,8 @@ export function GEXDashboard() {
       {/* Key Stats */}
       <Card>
         <MetricGrid cols={2}>
-          <Metric label="Call GEX" value={`+${data.total_call_gex.toFixed(2)}B`} color="#10D982" />
-          <Metric label="Put GEX" value={`${data.total_put_gex.toFixed(2)}B`} color="#FF3855" />
+          <Metric label="Call GEX" value={data.total_call_gex != null ? `+${data.total_call_gex.toFixed(2)}B` : '—'} color="#10D982" />
+          <Metric label="Put GEX" value={data.total_put_gex != null ? `${data.total_put_gex.toFixed(2)}B` : '—'} color="#FF3855" />
           <Metric label="Call Wall (SPY)" value={data.call_wall_spy?.toFixed(2)} />
           <Metric label="Put Wall (SPY)" value={data.put_wall_spy?.toFixed(2)} />
         </MetricGrid>

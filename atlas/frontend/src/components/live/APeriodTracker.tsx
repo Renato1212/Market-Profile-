@@ -139,7 +139,7 @@ export function APeriodTracker() {
             <span className="text-xs font-mono text-text-secondary">N={pred.bars_used} bars</span>
           </div>
           <div className="space-y-1.5">
-            {Object.entries(pred.probabilities)
+            {Object.entries(pred.probabilities ?? {})
               .sort(([, a], [, b]) => b - a)
               .map(([type, pct]) => (
                 <DayTypeBar key={type} type={type} pct={pct} isTop={type === pred.top_prediction} />

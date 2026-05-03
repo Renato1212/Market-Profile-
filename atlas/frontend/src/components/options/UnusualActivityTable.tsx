@@ -70,7 +70,7 @@ export function UnusualActivityTable() {
                   <td className="py-2 px-2 font-mono">{item.volume?.toLocaleString()}</td>
                   <td className="py-2 px-2 font-mono text-text-secondary">{item.oi?.toLocaleString()}</td>
                   <td className="py-2 px-2 font-mono text-gold">{item.vol_oi_ratio?.toFixed(1)}x</td>
-                  <td className="py-2 px-2 font-mono">${(item.premium / 1000).toFixed(0)}K</td>
+                  <td className="py-2 px-2 font-mono">{item.premium != null ? `$${(item.premium / 1000).toFixed(0)}K` : '—'}</td>
                   <td className="py-2 px-2">
                     {item.institutional && (
                       <span className="text-[9px] bg-purple/20 text-purple rounded px-1.5 py-0.5">INST</span>

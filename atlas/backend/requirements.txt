@@ -13,8 +13,6 @@ aiofiles==23.2.1
 apscheduler==3.10.4
 sqlalchemy==2.0.30
 aiosqlite==0.20.0
-anthopic==0.26.1
-anthopic>=0.26.1
 anthropic==0.26.1
 pytz==2024.1
 tenacity==8.3.0

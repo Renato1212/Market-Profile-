@@ -1,8 +1,6 @@
 [build]
 builder = "DOCKERFILE"
-# Use root Dockerfile.fullstack (builds frontend + backend together)
 dockerfilePath = "Dockerfile.fullstack"
-buildContext = "../.."
 
 [deploy]
 startCommand = "uvicorn main:app --host 0.0.0.0 --port $PORT --workers 2"

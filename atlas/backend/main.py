@@ -118,8 +118,12 @@ async def websocket_live(websocket: WebSocket):
 
 app.state.ws_manager = manager
 
-# Serve React frontend from /frontend/dist — must come LAST after all API routes
-FRONTEND_DIST = os.path.join(os.path.dirname(__file__), "..", "frontend", "dist")
+# Serve React frontend — check both dev layout (../frontend/dist) and
+# container layout (./frontend/dist) so one binary works everywhere.
+_base = os.path.dirname(os.path.abspath(__file__))
+FRONTEND_DIST = os.path.join(_base, "..", "frontend", "dist")
+if not os.path.isdir(FRONTEND_DIST):
+    FRONTEND_DIST = os.path.join(_base, "frontend", "dist")
 if os.path.isdir(FRONTEND_DIST):
     app.mount("/assets", StaticFiles(directory=os.path.join(FRONTEND_DIST, "assets")), name="assets")
 

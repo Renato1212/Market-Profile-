@@ -35,6 +35,11 @@ def _confidence_badge(n: int) -> str:
 
 def _fill_rate_stats(subset: pd.DataFrame) -> dict:
     """Compute fill rate statistics for a filtered subset of gap sessions."""
+    if subset.empty or "gap_direction" not in subset.columns:
+        return {"n": 0, "fill_rate_pct": None, "confidence": "insufficient",
+                "avg_fill_time": None, "median_fill_time": None, "avg_mae": None,
+                "fill_by_1030_pct": None, "fill_by_1200_pct": None,
+                "fill_by_1400_pct": None, "no_fill_pct": None}
     gap_rows = subset[subset["gap_direction"].isin(["up", "down"])].copy()
     n = len(gap_rows)
 
@@ -47,15 +52,18 @@ def _fill_rate_stats(subset: pd.DataFrame) -> dict:
     filled = gap_rows[gap_rows["filled_same_session"] == True]
     fill_rate = len(filled) / n * 100
 
-    fill_times = filled["fill_time_minutes"].dropna()
+    fill_times = filled["fill_time_minutes"].dropna() if "fill_time_minutes" in filled.columns else pd.Series(dtype=float)
     avg_fill_time = float(fill_times.mean()) if len(fill_times) > 0 else None
     median_fill_time = float(fill_times.median()) if len(fill_times) > 0 else None
 
-    maes = filled["mae_before_fill_pts"].dropna()
-    avg_mae = float(maes.mean()) if len(maes) > 0 else None
+    if "mae_before_fill_pts" in filled.columns:
+        maes = filled["mae_before_fill_pts"].dropna()
+        avg_mae = float(maes.mean()) if len(maes) > 0 else None
+    else:
+        avg_mae = None
 
     # Time-bucketed fill rates (only for sessions with intraday data)
-    intraday = gap_rows[gap_rows["has_intraday"] == True]
+    intraday = gap_rows[gap_rows["has_intraday"] == True] if "has_intraday" in gap_rows.columns else pd.DataFrame()
     n_intraday = len(intraday)
 
     if n_intraday > 0:
@@ -91,8 +99,9 @@ def build_table_a_opening_location(gap_df: pd.DataFrame) -> list[dict]:
     ]
 
     rows = []
+    has_context = "gap_context" in gap_df.columns
     for ctx in contexts:
-        subset = gap_df[gap_df["gap_context"] == ctx]
+        subset = gap_df[gap_df["gap_context"] == ctx] if has_context else pd.DataFrame()
         if len(subset) == 0:
             subset_up = pd.DataFrame()
             subset_down = pd.DataFrame()

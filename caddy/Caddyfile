@@ -1,0 +1,37 @@
+{
+	admin off
+}
+
+(routes) {
+	route {
+		# Login page bypasses auth to avoid redirect loop
+		handle /login* {
+			reverse_proxy control:3000
+		}
+
+		# Auth gate — Caddy calls /auth; 2xx = allow, non-2xx = forward response to client
+		forward_auth control:3000 {
+			uri /auth
+			copy_headers Set-Cookie
+		}
+
+		# Neko browser stream (WebSocket + HTTP)
+		handle /neko* {
+			reverse_proxy neko:8080
+		}
+
+		# Control API and status page
+		reverse_proxy control:3000
+	}
+}
+
+# Plain HTTP — used by cloudflared tunnel internally
+:80 {
+	import routes
+}
+
+# HTTPS with self-signed cert — for local access (trust caddy's CA once)
+:443 {
+	tls internal
+	import routes
+}

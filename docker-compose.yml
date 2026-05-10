@@ -1,0 +1,76 @@
+name: mybrowse
+
+services:
+  caddy:
+    image: caddy:2.9-alpine
+    container_name: mybrowse-caddy
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    networks:
+      - internal
+
+  control:
+    build: ./control
+    container_name: mybrowse-control
+    restart: unless-stopped
+    environment:
+      ACCESS_PASSWORD: ${ACCESS_PASSWORD}
+      NEKO_CONTAINER: mybrowse-neko
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    networks:
+      - internal
+
+  neko:
+    image: ghcr.io/m1k1o/neko:google-chrome
+    container_name: mybrowse-neko
+    restart: unless-stopped
+    shm_size: "2gb"
+    cap_add:
+      - SYS_ADMIN
+    environment:
+      NEKO_SCREEN: "1920x1080@30"
+      NEKO_PASSWORD: ${NEKO_PASSWORD}
+      NEKO_PASSWORD_ADMIN: ${NEKO_PASSWORD_ADMIN}
+      # WebRTC UDP port range — these must be reachable from the internet
+      NEKO_EPR: "52000-52100"
+      # ICE lite: server advertises only its own IP, no STUN gathering
+      NEKO_ICELITE: "true"
+      # Public IP for ICE candidates; required for remote WebRTC to work
+      NEKO_NAT1TO1: ${PUBLIC_IP:-}
+      # Serve Neko UI under /neko so our control page owns /
+      NEKO_PATH_PREFIX: "/neko"
+    ports:
+      - "52000-52100:52000-52100/udp"
+    volumes:
+      - mybrowse-data:/home/neko
+    networks:
+      - internal
+
+  # Start with: docker compose --profile tunnel up -d
+  cloudflared:
+    image: cloudflare/cloudflared:2025.4.2
+    container_name: mybrowse-cloudflared
+    restart: unless-stopped
+    command: tunnel --no-autoupdate run
+    environment:
+      TUNNEL_TOKEN: ${CLOUDFLARE_TUNNEL_TOKEN}
+    networks:
+      - internal
+    profiles:
+      - tunnel
+
+volumes:
+  mybrowse-data:
+  caddy-data:
+  caddy-config:
+
+networks:
+  internal:
+    driver: bridge

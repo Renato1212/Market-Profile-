@@ -32,14 +32,14 @@ jobs:
 
       - uses: docker/setup-buildx-action@v3
 
-      - name: Build desktop image (GHA-cached layers)
+      - name: Build desktop image
         uses: docker/build-push-action@v5
         with:
           context: ./browser
           load: true
           tags: cloud-desktop:latest
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          cache-from: type=gha,scope=neko-desktop-v2
+          cache-to: type=gha,mode=max,scope=neko-desktop-v2
 
       - name: Get runner public IP
         run: echo "RUNNER_IP=$(curl -s https://api.ipify.org)" >> $GITHUB_ENV
@@ -97,19 +97,15 @@ jobs:
           **Password:** \`cloud\`
 
           ---
-          ### Why this is fast:
-          - WebRTC peer-to-peer UDP stream — same tech as Shadow PC, Parsec, GeForce NOW
-          - 60 FPS, 1920x1080, VP8 video — crisp and smooth
-          - No VNC, no HTTP video proxying through Cloudflare for the video feed
+          WebRTC peer-to-peer UDP stream — 60 FPS, crisp video (same tech as Shadow PC).
 
-          ### Your desktop includes:
-          - XFCE full desktop — file manager, taskbar, right-click menus
+          - XFCE desktop with file manager, taskbar, right-click menus
           - Google Chrome opens automatically
-          - Java 17 pre-installed — run MotiveWave, any .jar app
+          - Java pre-installed (run MotiveWave: \`java -jar app.jar\`)
           - Terminal: right-click desktop → Open Terminal Here
-          - Chrome profile + Downloads folder saved between sessions
+          - Chrome profile + Downloads saved between sessions
 
-          ### Install MotiveWave (open terminal, paste these lines):
+          ### Install MotiveWave (open terminal):
           \`\`\`
           wget https://www.motivewave.com/downloads/MotiveWave_linux64.sh
           chmod +x MotiveWave_linux64.sh

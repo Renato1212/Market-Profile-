@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       hours:
-        description: 'Session length in hours (max 6)'
+        description: 'Session length (max 6h)'
         required: true
         default: '6'
         type: choice
@@ -18,56 +18,61 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # ── Restore your saved browser state (tabs, bookmarks, downloads) ──
+      # ── Restore saved desktop state (Chrome profile, downloads, home) ─────
       - name: Restore saved state
         uses: actions/cache/restore@v4
         with:
-          path: browser-state
-          key: mybrowse-state-${{ github.run_id }}
-          restore-keys: mybrowse-state-
+          path: desktop-state
+          key: desktop-state-${{ github.run_id }}
+          restore-keys: desktop-state-
 
       - name: Prepare state directories
-        run: mkdir -p browser-state/chromium browser-state/downloads
+        run: |
+          mkdir -p desktop-state/chrome \
+                   desktop-state/downloads \
+                   desktop-state/home
 
-      # ── Fast Docker build — layers cached after first run ──
+      # ── Fast Docker build (layers cached after first run ~5min→~45sec) ────
       - uses: docker/setup-buildx-action@v3
 
-      - name: Build browser image (cached)
+      - name: Build desktop image (cached)
         uses: docker/build-push-action@v5
         with:
           context: ./browser
-          tags: mybrowse-browser:latest
+          tags: cloud-desktop:latest
           cache-from: type=gha
           cache-to: type=gha,mode=max
           load: true
 
-      # ── Start container with state mounted ──
-      - name: Start browser container
+      # ── Start XPRA desktop container ──────────────────────────────────────
+      - name: Start desktop
         run: |
-          docker run -d --name browser \
+          docker run -d --name desktop \
             --shm-size=2g \
-            -v "$(pwd)/browser-state/chromium:/root/.config/chromium" \
-            -v "$(pwd)/browser-state/downloads:/root/Downloads" \
-            -p 6080:6080 \
-            mybrowse-browser
+            --cap-add=SYS_ADMIN \
+            -v "$(pwd)/desktop-state/chrome:/root/.config/chrome" \
+            -v "$(pwd)/desktop-state/downloads:/root/Downloads" \
+            -v "$(pwd)/desktop-state/home:/root/apps" \
+            -p 14500:14500 \
+            cloud-desktop
 
-          echo "Waiting for noVNC..."
-          for i in $(seq 1 60); do
-            curl -sf http://localhost:6080/ > /dev/null 2>&1 \
-              && echo "Ready after ${i}s" && break
+          echo "Waiting for XPRA HTML5 server..."
+          for i in $(seq 1 90); do
+            curl -sf http://localhost:14500/ > /dev/null 2>&1 \
+              && echo "XPRA ready after ${i}s" && break
             sleep 2
           done
-          curl -sf http://localhost:6080/ > /dev/null 2>&1 \
-            || { echo "FAILED — container logs:"; docker logs browser; exit 1; }
+          curl -sf http://localhost:14500/ > /dev/null 2>&1 \
+            || { echo "FAILED — container logs:"; docker logs desktop; exit 1; }
 
-      # ── Cloudflare tunnel ──
-      - name: Start tunnel and publish URL
+      # ── Cloudflare tunnel ─────────────────────────────────────────────────
+      - name: Open tunnel and publish URL
         run: |
           curl -sSL -o /usr/local/bin/cloudflared \
             https://github.com/cloudflare/cloudflared/releases/download/2025.4.2/cloudflared-linux-amd64
           chmod +x /usr/local/bin/cloudflared
 
-          cloudflared tunnel --no-autoupdate --url http://localhost:6080 \
+          cloudflared tunnel --no-autoupdate --url http://localhost:14500 \
             > /tmp/cf.log 2>&1 &
 
           URL=""
@@ -78,44 +83,46 @@ jobs:
           done
           [ -z "$URL" ] && { cat /tmp/cf.log; exit 1; }
 
-          FULL="${URL}/vnc.html?autoconnect=true&resize=scale"
-
           cat >> $GITHUB_STEP_SUMMARY << EOF
-          # Your Cloud Browser is Live
+          # Your Cloud Desktop is Live
 
-          ## Open on any device — no password needed:
-          ${FULL}
+          ## Open on any device:
+          ${URL}
 
-          ---
-          ### Terminal is open on the desktop. You can run:
-          | Command | What it does |
-          |---|---|
-          | \`sudo apt install <app>\` | Install any Linux app |
-          | \`pip3 install <package>\` | Install Python packages |
-          | \`wget <url>\` | Download any file |
-          | \`chmod +x app.AppImage && ./app.AppImage\` | Run AppImage apps |
-          | \`sudo gdebi app.deb\` | Install .deb packages |
-          | \`node script.js\` | Run Node.js scripts |
+          Click **"Connect"** — no password needed.
 
           ---
-          **State saves automatically** — your Chrome profile, bookmarks,
-          history, and Downloads folder persist to the next session.
+          ### What you have:
+          - **Google Chrome** — opens automatically
+          - **Cloud Terminal** (black window) — full Linux shell
+          - **Java 17** pre-installed — run MotiveWave, NinjaTrader, etc.
+          - **Screen resizes** to fit your device automatically (XPRA)
+          - **State saves** — Chrome profile + Downloads persist next session
 
-          Session expires in **${{ inputs.hours }} hour(s)**.
+          ### Install & run any app in the terminal:
+          \`\`\`
+          sudo apt install <app>          # Linux apps
+          pip3 install <package>          # Python
+          wget <url> && sudo gdebi *.deb  # .deb installer
+          chmod +x *.AppImage && ./*.AppImage  # AppImages
+          java -jar app.jar               # Java apps (MotiveWave etc.)
+          \`\`\`
+
+          Session expires in **${{ inputs.hours }}h**. Run again to resume — state is saved.
           EOF
 
           echo "========================================"
-          echo "  LINK: $FULL"
+          echo "  LINK : $URL"
           echo "========================================"
 
-      # ── Keep alive (leave 90s at end for state save) ──
+      # ── Keep alive (reserve 2min at end for state save) ──────────────────
       - name: Keep session alive
-        run: sleep $(( ${{ inputs.hours }} * 3600 - 90 ))
+        run: sleep $(( ${{ inputs.hours }} * 3600 - 120 ))
 
-      # ── Save state so next session picks up where you left off ──
-      - name: Save browser state
+      # ── Save desktop state ────────────────────────────────────────────────
+      - name: Save desktop state
         if: always()
         uses: actions/cache/save@v4
         with:
-          path: browser-state
-          key: mybrowse-state-${{ github.run_id }}
+          path: desktop-state
+          key: desktop-state-${{ github.run_id }}

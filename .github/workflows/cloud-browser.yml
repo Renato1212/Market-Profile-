@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       hours:
-        description: 'Session length in hours (max 6)'
+        description: 'Session length (max 6h)'
         required: true
         default: '6'
         type: choice
@@ -18,73 +18,102 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Build browser image
-        run: docker build -t mybrowse-browser ./browser
+      - name: Restore saved state
+        uses: actions/cache/restore@v4
+        with:
+          path: desktop-state
+          key: desktop-state-${{ github.run_id }}
+          restore-keys: desktop-state-
 
-      - name: Generate session password
-        run: echo "VNC_PASS=$(openssl rand -hex 5)" >> $GITHUB_ENV
+      - name: Prepare state directories
+        run: mkdir -p desktop-state/chrome desktop-state/downloads desktop-state/home
 
-      - name: Start browser container
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Build desktop image (cached)
+        uses: docker/build-push-action@v5
+        with:
+          context: ./browser
+          tags: cloud-desktop:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          load: true
+
+      - name: Start desktop container
         run: |
-          docker run -d --name browser \
+          docker run -d --name desktop \
             --shm-size=2g \
-            -e VNC_PASS=${{ env.VNC_PASS }} \
+            -v "$(pwd)/desktop-state/chrome:/root/.config/chrome" \
+            -v "$(pwd)/desktop-state/downloads:/root/Downloads" \
             -p 6080:6080 \
-            mybrowse-browser
-          # Wait for all services inside to come up
-          sleep 20
+            cloud-desktop
 
-      - name: Verify container is healthy
-        run: |
-          docker ps | grep browser
-          curl -sf http://localhost:6080/ > /dev/null && echo "noVNC is up" || echo "noVNC not yet ready"
+          echo "Waiting for noVNC..."
+          for i in $(seq 1 90); do
+            curl -sf http://localhost:6080/ > /dev/null 2>&1 \
+              && echo "Ready after ${i}s" && break
+            sleep 2
+          done
+          curl -sf http://localhost:6080/ > /dev/null 2>&1 \
+            || { echo "FAILED:"; docker logs desktop; exit 1; }
 
-      - name: Start Cloudflare tunnel and publish URL
+      - name: Open Cloudflare tunnel
         run: |
           curl -sSL -o /usr/local/bin/cloudflared \
             https://github.com/cloudflare/cloudflared/releases/download/2025.4.2/cloudflared-linux-amd64
           chmod +x /usr/local/bin/cloudflared
-
           cloudflared tunnel --no-autoupdate --url http://localhost:6080 \
             > /tmp/cf.log 2>&1 &
 
-          # Wait up to 60 s for the tunnel URL to appear
           URL=""
           for i in $(seq 1 30); do
             URL=$(grep -oP 'https://[a-z0-9-]+\.trycloudflare\.com' /tmp/cf.log | head -1)
             [ -n "$URL" ] && break
             sleep 2
           done
+          [ -z "$URL" ] && { cat /tmp/cf.log; exit 1; }
 
-          if [ -z "$URL" ]; then
-            echo "Tunnel failed to start. cloudflared log:" && cat /tmp/cf.log
-            exit 1
-          fi
+          # High-quality noVNC URL: quality=9 (max JPEG), compression=2
+          FULL="${URL}/vnc.html?autoconnect=true&resize=scale&quality=9&compression=2"
 
-          FULL="${URL}/vnc.html?autoconnect=true&resize=scale"
-
-          # Write to job summary (visible in Actions → this run → Summary)
           cat >> $GITHUB_STEP_SUMMARY << EOF
-          # 🌐 Your Cloud Browser is Live
+          # Your Cloud Desktop is Live
 
-          ## ➡️ Open this link on any device:
-          # ${FULL}
+          ## Open on any device:
+          ${FULL}
 
-          **VNC Password:** \`${{ env.VNC_PASS }}\`
+          Click **Connect** — no password needed.
 
-          1. Click the link above
-          2. If prompted, enter the password shown above
-          3. Chrome opens — use it from anywhere
+          ---
+          ### Installed and ready:
+          - **Google Chrome** (opens automatically)
+          - **Cloud Terminal** — black window, full Linux shell
+          - **Java 17** — run MotiveWave: \`java -jar motivewave.jar\`
+          - **Python 3, Node.js, git, wget, curl**
+          - **Chrome profile + Downloads** saved between sessions
 
-          ⏱️ Session expires in **${{ inputs.hours }} hour(s)**.
-          To get a fresh session, run this workflow again.
+          ### Install anything in the terminal:
+          | Command | Action |
+          |---|---|
+          | \`sudo apt install vlc\` | Any Linux app |
+          | \`pip3 install pandas\` | Python packages |
+          | \`sudo gdebi app.deb\` | .deb installer |
+          | \`chmod +x *.AppImage && ./*.AppImage\` | AppImages |
+          | \`java -jar app.jar\` | Java apps |
+
+          Session: **${{ inputs.hours }}h** — state auto-saves on exit.
           EOF
 
-          echo ""
-          echo "========================================"
-          echo "  YOUR LINK: $FULL"
-          echo "  PASSWORD : ${{ env.VNC_PASS }}"
-          echo "========================================"
+          echo "=========================="
+          echo "  LINK: $FULL"
+          echo "=========================="
 
       - name: Keep session alive
-        run: sleep $(( ${{ inputs.hours }} * 3600 ))
+        run: sleep $(( ${{ inputs.hours }} * 3600 - 120 ))
+
+      - name: Save desktop state
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: desktop-state
+          key: desktop-state-${{ github.run_id }}

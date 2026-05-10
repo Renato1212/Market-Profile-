@@ -1,38 +1,35 @@
 #!/bin/bash
 set -e
 
-echo "Launching XPRA cloud desktop..."
+echo "[1/4] Starting TigerVNC server at 1920x1080..."
+Xtigervnc :1 \
+    -SecurityTypes None \
+    -localhost no \
+    -rfbport 5900 \
+    -geometry 1920x1080 \
+    -depth 24 \
+    -desktop "Cloud Desktop" &
+sleep 4
 
-# XPRA manages its own virtual display, encoding, and HTML5 server in one process.
-# VP8/H.264 adaptive encoding — far sharper and faster than noVNC+VNC.
-exec xpra start :100 \
-    --bind-tcp=0.0.0.0:14500 \
-    --html=on \
-    --daemon=no \
-    --auth=none \
-    --encoding=auto \
-    --quality=80 \
-    --min-quality=50 \
-    --speed=70 \
-    --dpi=96 \
-    --pulseaudio=no \
-    --bell=no \
-    --mdns=no \
-    --notifications=no \
-    --webcam=no \
-    --printing=no \
-    --file-transfer=on \
-    --open-files=on \
-    --exit-with-children=no \
-    --start-child="google-chrome \
-        --no-sandbox \
-        --no-first-run \
-        --disable-dev-shm-usage \
-        --start-maximized \
-        --user-data-dir=/root/.config/chrome \
-        https://www.google.com" \
-    --start-child="xterm \
-        -fa 'Monospace' -fs 12 \
-        -bg '#0d1117' -fg '#c9d1d9' \
-        -geometry 130x32 \
-        -title 'Cloud Terminal — sudo apt install / pip3 install / java -jar'"
+echo "[2/4] Starting Chrome and terminal..."
+DISPLAY=:1 google-chrome \
+    --no-sandbox \
+    --no-first-run \
+    --disable-dev-shm-usage \
+    --start-maximized \
+    --user-data-dir=/root/.config/chrome \
+    https://www.google.com &
+
+DISPLAY=:1 xterm \
+    -fa 'Monospace' -fs 12 \
+    -bg '#0d1117' -fg '#c9d1d9' \
+    -geometry 130x32 \
+    -title 'Cloud Terminal — sudo apt install / pip3 install / java -jar' &
+sleep 3
+
+echo "[3/4] Starting noVNC WebSocket proxy..."
+websockify --web=/opt/novnc --heartbeat=30 0.0.0.0:6080 localhost:5900 &
+sleep 2
+
+echo "[4/4] Desktop ready."
+exec tail -f /dev/null

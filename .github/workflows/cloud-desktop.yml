@@ -31,8 +31,6 @@ jobs:
           chmod -R 777 session-state
 
       # Pull the official neko Chrome image — no custom build needed.
-      # ghcr.io/m1k1o/neko/google-chrome ships Chrome + XFCE + neko server
-      # pre-configured and battle-tested. Pull on GitHub Actions: ~60 sec.
       - name: Pull neko image
         run: docker pull ghcr.io/m1k1o/neko/google-chrome:latest
 
@@ -88,6 +86,34 @@ jobs:
             exit 1
           fi
 
+      - name: Remove Chrome download restrictions
+        run: |
+          # Neko's Chrome image ships with enterprise policies that block
+          # downloads ("your organization blocked this file"). Replace those
+          # policies with permissive ones so the user can download anything.
+          docker exec -u root desktop bash -c '
+            rm -f /etc/opt/chrome/policies/managed/*.json 2>/dev/null || true
+            rm -f /etc/opt/chrome/policies/recommended/*.json 2>/dev/null || true
+            rm -f /etc/chromium/policies/managed/*.json 2>/dev/null || true
+            mkdir -p /etc/opt/chrome/policies/managed
+            cat > /etc/opt/chrome/policies/managed/allow-everything.json <<EOF
+{
+  "DownloadRestrictions": 0,
+  "SafeBrowsingProtectionLevel": 0,
+  "PromptForDownloadLocation": true,
+  "DownloadDirectory": "/home/neko/Downloads",
+  "DefaultDownloadDirectory": "/home/neko/Downloads",
+  "AlwaysOpenPdfExternally": false,
+  "URLAllowlist": ["*"],
+  "URLBlocklist": []
+}
+EOF
+            # Restart Chrome so it picks up the new policy.
+            # supervisord auto-restarts it.
+            pkill -f "google-chrome" || true
+          '
+          echo "Chrome download restrictions removed."
+
       - name: Install Java in running desktop
         run: |
           docker exec -u root desktop bash -c "
@@ -127,6 +153,7 @@ jobs:
           - Java pre-installed — run MotiveWave from the terminal
           - Right-click the desktop → **Open Terminal** for shell access
           - Chrome profile + Downloads saved between sessions
+          - Downloads enabled — install any .deb, .sh, .AppImage from any site
 
           ### Install MotiveWave (paste in terminal):
           \`\`\`

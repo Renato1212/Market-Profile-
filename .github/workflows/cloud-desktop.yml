@@ -30,21 +30,16 @@ jobs:
           mkdir -p session-state/chrome session-state/downloads
           chmod -R 777 session-state
 
-      - uses: docker/setup-buildx-action@v3
-
-      - name: Build desktop image
-        uses: docker/build-push-action@v5
-        with:
-          context: ./browser
-          load: true
-          tags: cloud-desktop:latest
-          cache-from: type=gha,scope=neko-desktop-v2
-          cache-to: type=gha,mode=max,scope=neko-desktop-v2
+      # Pull the official neko Chrome image — no custom build needed.
+      # ghcr.io/m1k1o/neko/google-chrome ships Chrome + XFCE + neko server
+      # pre-configured and battle-tested. Pull on GitHub Actions: ~60 sec.
+      - name: Pull neko image
+        run: docker pull ghcr.io/m1k1o/neko/google-chrome:latest
 
       - name: Get runner public IP
         run: echo "RUNNER_IP=$(curl -s https://api.ipify.org)" >> $GITHUB_ENV
 
-      - name: Start Neko WebRTC desktop
+      - name: Start Neko desktop
         run: |
           NEKO_ICE='[{"urls":["stun:stun.l.google.com:19302","stun:stun1.l.google.com:19302"]},{"urls":["turn:openrelay.metered.ca:80","turn:openrelay.metered.ca:443","turns:openrelay.metered.ca:443"],"username":"openrelayproject","credential":"openrelayproject"}]'
 
@@ -53,23 +48,53 @@ jobs:
             -e NEKO_SCREEN="1920x1080@60" \
             -e NEKO_PASSWORD="cloud" \
             -e NEKO_PASSWORD_ADMIN="cloud" \
-            -e NEKO_IMPLICIT_CONTROL="true" \
             -e NEKO_EPR="52000-52100" \
             -e NEKO_NAT1TO1="${{ env.RUNNER_IP }}" \
             -e NEKO_ICESERVERS="$NEKO_ICE" \
-            -e NEKO_MAX_FPS="60" \
             -v "$(pwd)/session-state/chrome:/home/neko/.config/google-chrome" \
             -v "$(pwd)/session-state/downloads:/home/neko/Downloads" \
             -p 8080:8080 \
             -p 52000-52100:52000-52100/udp \
-            cloud-desktop
+            ghcr.io/m1k1o/neko/google-chrome:latest
 
-          echo "Waiting for Neko..."
-          for i in $(seq 1 45); do
-            curl -sf http://localhost:8080/ > /dev/null 2>&1 && echo "Ready after $((i * 2))s" && break
+          sleep 3
+          echo "=== Container status ==="
+          docker inspect desktop --format='Status: {{.State.Status}}  Running: {{.State.Running}}' 2>/dev/null || true
+          echo "=== Early logs (first 30 lines) ==="
+          docker logs desktop 2>&1 | head -30 || true
+
+          echo "=== Waiting for Neko web server on :8080 ==="
+          for i in $(seq 1 75); do
+            STATUS=$(docker inspect desktop --format='{{.State.Status}}' 2>/dev/null || echo "missing")
+            if [ "$STATUS" = "exited" ] || [ "$STATUS" = "dead" ]; then
+              echo "Container crashed after $((i*2))s!"
+              docker logs desktop
+              exit 1
+            fi
+            if curl -sf http://localhost:8080/ > /dev/null 2>&1; then
+              echo "Neko ready after $((i * 2))s"
+              break
+            fi
+            if [ $((i % 15)) -eq 0 ]; then
+              echo "Still starting ($((i*2))s)..."
+              docker logs --tail 8 desktop 2>&1 || true
+            fi
             sleep 2
           done
-          curl -sf http://localhost:8080/ > /dev/null 2>&1 || { docker logs desktop; exit 1; }
+
+          if ! curl -sf http://localhost:8080/ > /dev/null 2>&1; then
+            echo "=== TIMEOUT — full container logs ==="
+            docker logs desktop
+            exit 1
+          fi
+
+      - name: Install Java in running desktop
+        run: |
+          docker exec -u root desktop bash -c "
+            apt-get update -qq &&
+            apt-get install -y --no-install-recommends default-jdk 2>&1 | tail -3 &&
+            java -version
+          " && echo "Java ready."
 
       - name: Open Cloudflare tunnel
         run: |
@@ -97,15 +122,13 @@ jobs:
           **Password:** \`cloud\`
 
           ---
-          WebRTC peer-to-peer UDP stream — 60 FPS, crisp video (same tech as Shadow PC).
-
-          - XFCE desktop with file manager, taskbar, right-click menus
-          - Google Chrome opens automatically
-          - Java pre-installed (run MotiveWave: \`java -jar app.jar\`)
-          - Terminal: right-click desktop → Open Terminal Here
+          - WebRTC peer-to-peer stream — 60 FPS, crisp HD video
+          - Google Chrome opens automatically (full XFCE desktop underneath)
+          - Java pre-installed — run MotiveWave from the terminal
+          - Right-click the desktop → **Open Terminal** for shell access
           - Chrome profile + Downloads saved between sessions
 
-          ### Install MotiveWave (open terminal):
+          ### Install MotiveWave (paste in terminal):
           \`\`\`
           wget https://www.motivewave.com/downloads/MotiveWave_linux64.sh
           chmod +x MotiveWave_linux64.sh

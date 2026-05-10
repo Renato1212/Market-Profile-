@@ -21,17 +21,19 @@ jobs:
       - name: Build browser image
         run: docker build -t mybrowse-browser ./browser
 
-      - name: Generate session password
-        run: echo "VNC_PASS=$(openssl rand -hex 5)" >> $GITHUB_ENV
-
       - name: Start browser container
         run: |
           docker run -d --name browser \
             --shm-size=2g \
-            -e VNC_PASS=${{ env.VNC_PASS }} \
             -p 6080:6080 \
             mybrowse-browser
-          sleep 20
+
+          echo "Waiting for noVNC to be ready..."
+          for i in $(seq 1 60); do
+            curl -sf http://localhost:6080/ > /dev/null 2>&1 && echo "noVNC is up after ${i}s" && break
+            sleep 2
+          done
+          curl -sf http://localhost:6080/ > /dev/null 2>&1 || { echo "noVNC failed to start"; docker logs browser; exit 1; }
 
       - name: Start Cloudflare tunnel and publish URL
         run: |
@@ -58,17 +60,16 @@ jobs:
           cat >> $GITHUB_STEP_SUMMARY << EOF
           # Your Cloud Browser is Live
 
-          ## Open on any device:
+          ## Open this link on any device:
           ${FULL}
 
-          **Password:** ${{ env.VNC_PASS }}
+          No password needed — just click Connect.
 
-          Session expires in ${{ inputs.hours }} hour(s).
+          Session expires in ${{ inputs.hours }} hour(s). Run the workflow again for a new session.
           EOF
 
           echo "========================================"
-          echo "  LINK    : $FULL"
-          echo "  PASSWORD: ${{ env.VNC_PASS }}"
+          echo "  YOUR LINK: $FULL"
           echo "========================================"
 
       - name: Keep session alive

@@ -1,38 +1,38 @@
 #!/bin/bash
+set -e
 
-echo "[1/5] Starting virtual display at 1920x1080..."
-Xvfb :99 -screen 0 1920x1080x24 -ac &
-sleep 3
+echo "Launching XPRA cloud desktop..."
 
-echo "[2/5] Starting VNC server..."
-x11vnc -display :99 -forever -nopw -shared -rfbport 5900 -quiet &
-sleep 2
-
-echo "[3/5] Starting noVNC WebSocket proxy..."
-websockify --web=/opt/novnc --heartbeat=30 0.0.0.0:6080 localhost:5900 &
-sleep 2
-
-echo "[4/5] Opening terminal..."
-DISPLAY=:99 xterm \
-    -fa 'Monospace' -fs 11 \
-    -bg '#0d1117' -fg '#c9d1d9' \
-    -geometry 110x28+0+600 \
-    -title "Cloud Terminal — install & run apps here" &
-sleep 1
-
-echo "[5/5] Starting Chrome..."
-DISPLAY=:99 chromium \
-    --no-sandbox \
-    --disable-dev-shm-usage \
-    --disable-gpu \
-    --no-first-run \
-    --memory-pressure-off \
-    --disable-background-timer-throttling \
-    --disable-renderer-backgrounding \
-    --disable-backgrounding-occluded-windows \
-    --user-data-dir=/root/.config/chromium \
-    --start-maximized \
-    https://www.google.com &
-
-echo "All services up. noVNC on :6080"
-exec tail -f /dev/null
+# XPRA manages its own virtual display, encoding, and HTML5 server in one process.
+# VP8/H.264 adaptive encoding — far sharper and faster than noVNC+VNC.
+exec xpra start :100 \
+    --bind-tcp=0.0.0.0:14500 \
+    --html=on \
+    --daemon=no \
+    --auth=none \
+    --encoding=auto \
+    --quality=80 \
+    --min-quality=50 \
+    --speed=70 \
+    --dpi=96 \
+    --pulseaudio=no \
+    --bell=no \
+    --mdns=no \
+    --notifications=no \
+    --webcam=no \
+    --printing=no \
+    --file-transfer=on \
+    --open-files=on \
+    --exit-with-children=no \
+    --start-child="google-chrome \
+        --no-sandbox \
+        --no-first-run \
+        --disable-dev-shm-usage \
+        --start-maximized \
+        --user-data-dir=/root/.config/chrome \
+        https://www.google.com" \
+    --start-child="xterm \
+        -fa 'Monospace' -fs 12 \
+        -bg '#0d1117' -fg '#c9d1d9' \
+        -geometry 130x32 \
+        -title 'Cloud Terminal — sudo apt install / pip3 install / java -jar'"

@@ -18,24 +18,50 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Build browser image
-        run: docker build -t mybrowse-browser ./browser
+      # ── Restore your saved browser state (tabs, bookmarks, downloads) ──
+      - name: Restore saved state
+        uses: actions/cache/restore@v4
+        with:
+          path: browser-state
+          key: mybrowse-state-${{ github.run_id }}
+          restore-keys: mybrowse-state-
 
+      - name: Prepare state directories
+        run: mkdir -p browser-state/chromium browser-state/downloads
+
+      # ── Fast Docker build — layers cached after first run ──
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Build browser image (cached)
+        uses: docker/build-push-action@v5
+        with:
+          context: ./browser
+          tags: mybrowse-browser:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          load: true
+
+      # ── Start container with state mounted ──
       - name: Start browser container
         run: |
           docker run -d --name browser \
             --shm-size=2g \
+            -v "$(pwd)/browser-state/chromium:/root/.config/chromium" \
+            -v "$(pwd)/browser-state/downloads:/root/Downloads" \
             -p 6080:6080 \
             mybrowse-browser
 
-          echo "Waiting for noVNC to be ready..."
+          echo "Waiting for noVNC..."
           for i in $(seq 1 60); do
-            curl -sf http://localhost:6080/ > /dev/null 2>&1 && echo "noVNC is up after ${i}s" && break
+            curl -sf http://localhost:6080/ > /dev/null 2>&1 \
+              && echo "Ready after ${i}s" && break
             sleep 2
           done
-          curl -sf http://localhost:6080/ > /dev/null 2>&1 || { echo "noVNC failed to start"; docker logs browser; exit 1; }
+          curl -sf http://localhost:6080/ > /dev/null 2>&1 \
+            || { echo "FAILED — container logs:"; docker logs browser; exit 1; }
 
-      - name: Start Cloudflare tunnel and publish URL
+      # ── Cloudflare tunnel ──
+      - name: Start tunnel and publish URL
         run: |
           curl -sSL -o /usr/local/bin/cloudflared \
             https://github.com/cloudflare/cloudflared/releases/download/2025.4.2/cloudflared-linux-amd64
@@ -50,27 +76,46 @@ jobs:
             [ -n "$URL" ] && break
             sleep 2
           done
-
-          if [ -z "$URL" ]; then
-            echo "Tunnel failed:" && cat /tmp/cf.log && exit 1
-          fi
+          [ -z "$URL" ] && { cat /tmp/cf.log; exit 1; }
 
           FULL="${URL}/vnc.html?autoconnect=true&resize=scale"
 
           cat >> $GITHUB_STEP_SUMMARY << EOF
           # Your Cloud Browser is Live
 
-          ## Open this link on any device:
+          ## Open on any device — no password needed:
           ${FULL}
 
-          No password needed — just click Connect.
+          ---
+          ### Terminal is open on the desktop. You can run:
+          | Command | What it does |
+          |---|---|
+          | \`sudo apt install <app>\` | Install any Linux app |
+          | \`pip3 install <package>\` | Install Python packages |
+          | \`wget <url>\` | Download any file |
+          | \`chmod +x app.AppImage && ./app.AppImage\` | Run AppImage apps |
+          | \`sudo gdebi app.deb\` | Install .deb packages |
+          | \`node script.js\` | Run Node.js scripts |
 
-          Session expires in ${{ inputs.hours }} hour(s). Run the workflow again for a new session.
+          ---
+          **State saves automatically** — your Chrome profile, bookmarks,
+          history, and Downloads folder persist to the next session.
+
+          Session expires in **${{ inputs.hours }} hour(s)**.
           EOF
 
           echo "========================================"
-          echo "  YOUR LINK: $FULL"
+          echo "  LINK: $FULL"
           echo "========================================"
 
+      # ── Keep alive (leave 90s at end for state save) ──
       - name: Keep session alive
-        run: sleep $(( ${{ inputs.hours }} * 3600 ))
+        run: sleep $(( ${{ inputs.hours }} * 3600 - 90 ))
+
+      # ── Save state so next session picks up where you left off ──
+      - name: Save browser state
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: browser-state
+          key: mybrowse-state-${{ github.run_id }}

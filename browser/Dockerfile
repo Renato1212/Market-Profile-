@@ -1,5 +1,8 @@
 FROM ghcr.io/m1k1o/neko/xfce:latest
 
+# Note: do NOT set USER neko at the end. Neko's entrypoint (supervisord)
+# must start as root and drops privileges itself.
+
 USER root
 
 # Add Google Chrome repository
@@ -16,7 +19,7 @@ RUN apt-get update \
     && apt-get install -y --no-install-recommends google-chrome-stable \
     && apt-get clean && rm -rf /var/lib/apt/lists/*
 
-# Install Java (default-jdk auto-selects available version: 11 or 17)
+# Install Java (default-jdk auto-selects available version)
 RUN apt-get update \
     && apt-get install -y --no-install-recommends default-jdk \
     && apt-get clean && rm -rf /var/lib/apt/lists/*
@@ -33,5 +36,3 @@ RUN apt-get update \
 RUN mkdir -p /etc/xdg/autostart \
     && printf '[Desktop Entry]\nType=Application\nName=Google Chrome\nExec=google-chrome --no-sandbox --disable-dev-shm-usage --no-first-run --start-maximized https://www.google.com\nHidden=false\nX-GNOME-Autostart-enabled=true\n' \
        > /etc/xdg/autostart/google-chrome.desktop
-
-USER neko

@@ -1,0 +1,86 @@
+name: Cloud Browser
+
+on:
+  workflow_dispatch:
+    inputs:
+      hours:
+        description: 'Session length in hours (max 6)'
+        required: true
+        default: '6'
+        type: choice
+        options: ['1', '2', '3', '4', '5', '6']
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build browser image
+        run: docker build -t mybrowse-browser ./browser
+
+      - name: Generate session password
+        run: echo "VNC_PASS=$(openssl rand -hex 5)" >> $GITHUB_ENV
+
+      - name: Start browser container
+        run: |
+          docker run -d --name browser \
+            --shm-size=2g \
+            -e VNC_PASS=${{ env.VNC_PASS }} \
+            -p 6080:6080 \
+            mybrowse-browser
+          sleep 20
+
+      - name: Verify container is healthy
+        run: |
+          docker ps | grep browser
+          curl -sf http://localhost:6080/ > /dev/null && echo "noVNC is up" || echo "noVNC not yet ready"
+
+      - name: Start Cloudflare tunnel and publish URL
+        run: |
+          curl -sSL -o /usr/local/bin/cloudflared \
+            https://github.com/cloudflare/cloudflared/releases/download/2025.4.2/cloudflared-linux-amd64
+          chmod +x /usr/local/bin/cloudflared
+
+          cloudflared tunnel --no-autoupdate --url http://localhost:6080 \
+            > /tmp/cf.log 2>&1 &
+
+          URL=""
+          for i in $(seq 1 30); do
+            URL=$(grep -oP 'https://[a-z0-9-]+\.trycloudflare\.com' /tmp/cf.log | head -1)
+            [ -n "$URL" ] && break
+            sleep 2
+          done
+
+          if [ -z "$URL" ]; then
+            echo "Tunnel failed to start. cloudflared log:" && cat /tmp/cf.log
+            exit 1
+          fi
+
+          FULL="${URL}/vnc.html?autoconnect=true&resize=scale"
+
+          cat >> $GITHUB_STEP_SUMMARY << EOF
+          # Your Cloud Browser is Live
+
+          ## Open this link on any device:
+          ${FULL}
+
+          **VNC Password:** ${{ env.VNC_PASS }}
+
+          1. Click the link
+          2. Enter the password above if prompted
+          3. Chrome opens — use it from anywhere
+
+          Session expires in ${{ inputs.hours }} hour(s).
+          EOF
+
+          echo ""
+          echo "========================================"
+          echo "  YOUR LINK: $FULL"
+          echo "  PASSWORD : ${{ env.VNC_PASS }}"
+          echo "========================================"
+
+      - name: Keep session alive
+        run: sleep $(( ${{ inputs.hours }} * 3600 ))

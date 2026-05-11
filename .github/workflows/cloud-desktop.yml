@@ -78,14 +78,27 @@ jobs:
           curl -sf http://localhost:8080/ > /dev/null 2>&1 || { echo "TIMEOUT"; docker logs desktop; exit 1; }
 
       - name: Remove Chrome download restrictions
+        continue-on-error: true
         run: |
-          POLICY='{"DownloadRestrictions":0,"SafeBrowsingProtectionLevel":0,"PromptForDownloadLocation":true,"URLAllowlist":["*"],"URLBlocklist":[]}'
-          docker exec -u root desktop bash -c "mkdir -p /etc/opt/chrome/policies/managed && rm -f /etc/opt/chrome/policies/managed/*.json && echo '$POLICY' > /etc/opt/chrome/policies/managed/allow-everything.json && pkill -f google-chrome || true"
+          docker exec -u root -i desktop bash << 'HEREDOC'
+          mkdir -p /etc/opt/chrome/policies/managed
+          rm -f /etc/opt/chrome/policies/managed/*.json 2>/dev/null || true
+          cat > /etc/opt/chrome/policies/managed/allow-everything.json << 'POLICY'
+          {"DownloadRestrictions":0,"SafeBrowsingProtectionLevel":0,"PromptForDownloadLocation":true,"URLAllowlist":["*"],"URLBlocklist":[]}
+          POLICY
+          pkill -x google-chrome || true
+          HEREDOC
           echo "Chrome download restrictions removed."
 
       - name: Install Java
+        continue-on-error: true
         run: |
-          docker exec -u root desktop bash -c "apt-get update -qq && apt-get install -y --no-install-recommends default-jdk 2>&1 | tail -3 && java -version" && echo "Java ready."
+          docker exec -u root -i desktop bash << 'HEREDOC'
+          apt-get update -qq
+          apt-get install -y --no-install-recommends default-jdk 2>&1 | tail -3
+          java -version
+          HEREDOC
+          echo "Java ready."
 
       - name: Open Cloudflare tunnel
         run: |
@@ -106,7 +119,7 @@ jobs:
           echo "  URL:  $URL"
           echo "  PASS: cloud"
           echo "=============================="
-          printf "# Cloud Desktop\n**URL:** %s\n**Password:** cloud\nSession: ${{ inputs.hours }}h\n" "$URL" >> $GITHUB_STEP_SUMMARY
+          printf "# Cloud Desktop Ready\n\n**URL:** %s\n\n**Password:** cloud\n\nSession: ${{ inputs.hours }}h\n" "$URL" >> $GITHUB_STEP_SUMMARY
 
       - name: Keep session alive
         run: sleep $(( ${{ inputs.hours }} * 3600 - 120 ))

@@ -34,7 +34,7 @@ jobs:
       - name: Prepare state directories
         run: |
           mkdir -p session-state/chrome session-state/downloads
-          chmod -R 777 session-state
+          sudo chmod -R 777 session-state
 
       - name: Pull neko image
         run: docker pull ghcr.io/m1k1o/neko/google-chrome:latest
@@ -110,6 +110,10 @@ jobs:
 
       - name: Keep session alive
         run: sleep $(( ${{ inputs.hours }} * 3600 - 120 ))
+
+      - name: Fix session-state permissions before save
+        if: always()
+        run: sudo chmod -R 777 session-state 2>/dev/null || true
 
       - name: Save session state
         if: always()

@@ -1,0 +1,175 @@
+name: Cloud Desktop
+
+on:
+  workflow_dispatch:
+    inputs:
+      hours:
+        description: 'Session length (max 6h)'
+        required: true
+        default: '6'
+        type: choice
+        options: ['1', '2', '3', '4', '5', '6']
+
+jobs:
+  run:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 360
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Restore session state
+        uses: actions/cache/restore@v4
+        with:
+          path: session-state
+          key: session-state-${{ github.run_id }}
+          restore-keys: session-state-
+
+      - name: Prepare state directories
+        run: |
+          mkdir -p session-state/chrome session-state/downloads
+          chmod -R 777 session-state
+
+      - name: Pull neko image
+        run: docker pull ghcr.io/m1k1o/neko/google-chrome:latest
+
+      - name: Get runner public IP
+        run: echo "RUNNER_IP=$(curl -s https://api.ipify.org)" >> $GITHUB_ENV
+
+      - name: Start Neko desktop
+        run: |
+          NEKO_ICE='[{"urls":["stun:stun.l.google.com:19302","stun:stun1.l.google.com:19302"]},{"urls":["turn:openrelay.metered.ca:80","turn:openrelay.metered.ca:443","turns:openrelay.metered.ca:443"],"username":"openrelayproject","credential":"openrelayproject"}]'
+
+          docker run -d --name desktop \
+            --shm-size=2g \
+            -e NEKO_SCREEN="1920x1080@60" \
+            -e NEKO_PASSWORD="cloud" \
+            -e NEKO_PASSWORD_ADMIN="cloud" \
+            -e NEKO_EPR="52000-52100" \
+            -e NEKO_NAT1TO1="${{ env.RUNNER_IP }}" \
+            -e NEKO_ICESERVERS="$NEKO_ICE" \
+            -v "$(pwd)/session-state/chrome:/home/neko/.config/google-chrome" \
+            -v "$(pwd)/session-state/downloads:/home/neko/Downloads" \
+            -p 8080:8080 \
+            -p 52000-52100:52000-52100/udp \
+            ghcr.io/m1k1o/neko/google-chrome:latest
+
+          sleep 3
+          echo "=== Container status ==="
+          docker inspect desktop --format='Status: {{.State.Status}}  Running: {{.State.Running}}' 2>/dev/null || true
+          echo "=== Early logs (first 30 lines) ==="
+          docker logs desktop 2>&1 | head -30 || true
+
+          echo "=== Waiting for Neko web server on :8080 ==="
+          for i in $(seq 1 75); do
+            STATUS=$(docker inspect desktop --format='{{.State.Status}}' 2>/dev/null || echo "missing")
+            if [ "$STATUS" = "exited" ] || [ "$STATUS" = "dead" ]; then
+              echo "Container crashed after $((i*2))s!"
+              docker logs desktop
+              exit 1
+            fi
+            if curl -sf http://localhost:8080/ > /dev/null 2>&1; then
+              echo "Neko ready after $((i * 2))s"
+              break
+            fi
+            if [ $((i % 15)) -eq 0 ]; then
+              echo "Still starting ($((i*2))s)..."
+              docker logs --tail 8 desktop 2>&1 || true
+            fi
+            sleep 2
+          done
+
+          if ! curl -sf http://localhost:8080/ > /dev/null 2>&1; then
+            echo "=== TIMEOUT — full container logs ==="
+            docker logs desktop
+            exit 1
+          fi
+
+      - name: Remove Chrome download restrictions
+        run: |
+          docker exec -u root desktop bash -c '
+            rm -f /etc/opt/chrome/policies/managed/*.json 2>/dev/null || true
+            rm -f /etc/opt/chrome/policies/recommended/*.json 2>/dev/null || true
+            rm -f /etc/chromium/policies/managed/*.json 2>/dev/null || true
+            mkdir -p /etc/opt/chrome/policies/managed
+            cat > /etc/opt/chrome/policies/managed/allow-everything.json <<EOF
+{
+  "DownloadRestrictions": 0,
+  "SafeBrowsingProtectionLevel": 0,
+  "PromptForDownloadLocation": true,
+  "DownloadDirectory": "/home/neko/Downloads",
+  "DefaultDownloadDirectory": "/home/neko/Downloads",
+  "AlwaysOpenPdfExternally": false,
+  "URLAllowlist": ["*"],
+  "URLBlocklist": []
+}
+EOF
+            pkill -f "google-chrome" || true
+          '
+          echo "Chrome download restrictions removed."
+
+      - name: Install Java in running desktop
+        run: |
+          docker exec -u root desktop bash -c "
+            apt-get update -qq &&
+            apt-get install -y --no-install-recommends default-jdk 2>&1 | tail -3 &&
+            java -version
+          " && echo "Java ready."
+
+      - name: Open Cloudflare tunnel
+        run: |
+          curl -sSL -o /usr/local/bin/cloudflared \
+            https://github.com/cloudflare/cloudflared/releases/download/2025.4.2/cloudflared-linux-amd64
+          chmod +x /usr/local/bin/cloudflared
+
+          cloudflared tunnel --no-autoupdate --url http://localhost:8080 \
+            > /tmp/cf.log 2>&1 &
+
+          URL=""
+          for i in $(seq 1 30); do
+            URL=$(grep -oP 'https://[a-z0-9-]+\.trycloudflare\.com' /tmp/cf.log | head -1)
+            [ -n "$URL" ] && break
+            sleep 2
+          done
+          [ -z "$URL" ] && { cat /tmp/cf.log; exit 1; }
+
+          cat >> $GITHUB_STEP_SUMMARY << EOF
+          # Cloud Desktop Ready
+
+          ## Open on any device:
+          $URL
+
+          **Password:** \`cloud\`
+
+          ---
+          - WebRTC peer-to-peer stream — 60 FPS, crisp HD video
+          - Google Chrome opens automatically (full XFCE desktop underneath)
+          - Java pre-installed — run MotiveWave from the terminal
+          - Right-click the desktop → **Open Terminal** for shell access
+          - Chrome profile + Downloads saved between sessions
+          - Downloads enabled — install any .deb, .sh, .AppImage from any site
+
+          ### Install MotiveWave (paste in terminal):
+          \`\`\`
+          wget https://www.motivewave.com/downloads/MotiveWave_linux64.sh
+          chmod +x MotiveWave_linux64.sh
+          ./MotiveWave_linux64.sh
+          \`\`\`
+
+          Session: **${{ inputs.hours }}h** — auto-saves on exit.
+          EOF
+
+          echo "=========================="
+          echo "  LINK: $URL"
+          echo "  PASS: cloud"
+          echo "=========================="
+
+      - name: Keep session alive
+        run: sleep $(( ${{ inputs.hours }} * 3600 - 120 ))
+
+      - name: Save session state
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: session-state
+          key: session-state-${{ github.run_id }}

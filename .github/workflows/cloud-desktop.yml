@@ -8,7 +8,13 @@ on:
         required: true
         default: '6'
         type: choice
-        options: ['1', '2', '3', '4', '5', '6']
+        options:
+          - '1'
+          - '2'
+          - '3'
+          - '4'
+          - '5'
+          - '6'
 
 jobs:
   run:
@@ -38,7 +44,7 @@ jobs:
 
       - name: Start Neko desktop
         run: |
-          NEKO_ICE='[{"urls":["stun:stun.l.google.com:19302","stun:stun1.l.google.com:19302"]},{"urls":["turn:openrelay.metered.ca:80","turn:openrelay.metered.ca:443","turns:openrelay.metered.ca:443"],"username":"openrelayproject","credential":"openrelayproject"}]'
+          NEKO_ICE='[{"urls":["stun:stun.l.google.com:19302"]},{"urls":["turn:openrelay.metered.ca:80","turn:openrelay.metered.ca:443","turns:openrelay.metered.ca:443"],"username":"openrelayproject","credential":"openrelayproject"}]'
 
           docker run -d --name desktop \
             --shm-size=2g \
@@ -54,61 +60,31 @@ jobs:
             -p 52000-52100:52000-52100/udp \
             ghcr.io/m1k1o/neko/google-chrome:latest
 
-          sleep 3
-          echo "=== Container status ==="
-          docker inspect desktop --format='Status: {{.State.Status}}  Running: {{.State.Running}}' 2>/dev/null || true
-          echo "=== Early logs (first 30 lines) ==="
-          docker logs desktop 2>&1 | head -30 || true
-
-          echo "=== Waiting for Neko web server on :8080 ==="
+          echo "Waiting for Neko on :8080..."
           for i in $(seq 1 75); do
-            STATUS=$(docker inspect desktop --format='{{.State.Status}}' 2>/dev/null || echo "missing")
-            if [ "$STATUS" = "exited" ] || [ "$STATUS" = "dead" ]; then
-              echo "Container crashed after $((i*2))s!"
-              docker logs desktop
-              exit 1
+            STATE=$(docker inspect desktop --format='{{.State.Status}}' 2>/dev/null || echo missing)
+            if [ "$STATE" = "exited" ] || [ "$STATE" = "dead" ]; then
+              echo "Container crashed!" && docker logs desktop && exit 1
             fi
-            if curl -sf http://localhost:8080/ > /dev/null 2>&1; then
-              echo "Neko ready after $((i * 2))s"
-              break
-            fi
-            if [ $((i % 15)) -eq 0 ]; then
-              echo "Still starting ($((i*2))s)..."
-              docker logs --tail 8 desktop 2>&1 || true
-            fi
+            curl -sf http://localhost:8080/ > /dev/null 2>&1 && echo "Neko ready after $((i*2))s" && break
+            [ $((i % 15)) -eq 0 ] && echo "Still starting ($((i*2))s)..." && docker logs --tail 5 desktop 2>&1 || true
             sleep 2
           done
-
-          if ! curl -sf http://localhost:8080/ > /dev/null 2>&1; then
-            echo "=== TIMEOUT — full container logs ==="
-            docker logs desktop
-            exit 1
-          fi
+          curl -sf http://localhost:8080/ > /dev/null 2>&1 || { echo "TIMEOUT"; docker logs desktop; exit 1; }
 
       - name: Remove Chrome download restrictions
         run: |
-          docker exec -u root desktop bash -c '
+          POLICY='{"DownloadRestrictions":0,"SafeBrowsingProtectionLevel":0,"PromptForDownloadLocation":true,"URLAllowlist":["*"],"URLBlocklist":[]}'
+          docker exec -u root desktop bash -c "
             rm -f /etc/opt/chrome/policies/managed/*.json 2>/dev/null || true
             rm -f /etc/opt/chrome/policies/recommended/*.json 2>/dev/null || true
-            rm -f /etc/chromium/policies/managed/*.json 2>/dev/null || true
             mkdir -p /etc/opt/chrome/policies/managed
-            cat > /etc/opt/chrome/policies/managed/allow-everything.json <<EOF
-{
-  "DownloadRestrictions": 0,
-  "SafeBrowsingProtectionLevel": 0,
-  "PromptForDownloadLocation": true,
-  "DownloadDirectory": "/home/neko/Downloads",
-  "DefaultDownloadDirectory": "/home/neko/Downloads",
-  "AlwaysOpenPdfExternally": false,
-  "URLAllowlist": ["*"],
-  "URLBlocklist": []
-}
-EOF
-            pkill -f "google-chrome" || true
-          '
+            echo '$POLICY' > /etc/opt/chrome/policies/managed/allow-everything.json
+            pkill -f google-chrome || true
+          "
           echo "Chrome download restrictions removed."
 
-      - name: Install Java in running desktop
+      - name: Install Java
         run: |
           docker exec -u root desktop bash -c "
             apt-get update -qq &&
@@ -122,8 +98,7 @@ EOF
             https://github.com/cloudflare/cloudflared/releases/download/2025.4.2/cloudflared-linux-amd64
           chmod +x /usr/local/bin/cloudflared
 
-          cloudflared tunnel --no-autoupdate --url http://localhost:8080 \
-            > /tmp/cf.log 2>&1 &
+          cloudflared tunnel --no-autoupdate --url http://localhost:8080 > /tmp/cf.log 2>&1 &
 
           URL=""
           for i in $(seq 1 30); do
@@ -133,36 +108,28 @@ EOF
           done
           [ -z "$URL" ] && { cat /tmp/cf.log; exit 1; }
 
-          cat >> $GITHUB_STEP_SUMMARY << EOF
+          echo "TUNNEL_URL=$URL" >> $GITHUB_ENV
+          cat >> $GITHUB_STEP_SUMMARY << SUMMARY
           # Cloud Desktop Ready
 
-          ## Open on any device:
-          $URL
+          ## Connect from any device:
+          **$URL**
 
-          **Password:** \`cloud\`
+          **Password:** cloud
 
-          ---
-          - WebRTC peer-to-peer stream — 60 FPS, crisp HD video
-          - Google Chrome opens automatically (full XFCE desktop underneath)
-          - Java pre-installed — run MotiveWave from the terminal
-          - Right-click the desktop → **Open Terminal** for shell access
-          - Chrome profile + Downloads saved between sessions
-          - Downloads enabled — install any .deb, .sh, .AppImage from any site
+          - 60 FPS WebRTC stream (Shadow PC quality)
+          - Chrome downloads fully unlocked
+          - Java pre-installed (run MotiveWave .sh installer)
+          - Right-click desktop for terminal
+          - Session saved automatically on exit
 
-          ### Install MotiveWave (paste in terminal):
-          \`\`\`
-          wget https://www.motivewave.com/downloads/MotiveWave_linux64.sh
-          chmod +x MotiveWave_linux64.sh
-          ./MotiveWave_linux64.sh
-          \`\`\`
+          Session length: ${{ inputs.hours }}h
+          SUMMARY
 
-          Session: **${{ inputs.hours }}h** — auto-saves on exit.
-          EOF
-
-          echo "=========================="
-          echo "  LINK: $URL"
+          echo "=============================="
+          echo "  URL:  $URL"
           echo "  PASS: cloud"
-          echo "=========================="
+          echo "=============================="
 
       - name: Keep session alive
         run: sleep $(( ${{ inputs.hours }} * 3600 - 120 ))

@@ -34,7 +34,7 @@ jobs:
       - name: Prepare state directories
         run: |
           mkdir -p session-state/chrome session-state/downloads
-          chmod -R 777 session-state
+          sudo chmod -R 777 session-state
 
       - name: Pull neko image
         run: docker pull ghcr.io/m1k1o/neko/google-chrome:latest
@@ -66,8 +66,13 @@ jobs:
             if [ "$STATE" = "exited" ] || [ "$STATE" = "dead" ]; then
               echo "Container crashed!" && docker logs desktop && exit 1
             fi
-            curl -sf http://localhost:8080/ > /dev/null 2>&1 && echo "Neko ready after $((i*2))s" && break
-            [ $((i % 15)) -eq 0 ] && echo "Still starting ($((i*2))s)..." && docker logs --tail 5 desktop 2>&1 || true
+            if curl -sf http://localhost:8080/ > /dev/null 2>&1; then
+              echo "Neko ready after $((i*2))s" && break
+            fi
+            if [ $((i % 15)) -eq 0 ]; then
+              echo "Still starting ($((i*2))s)..."
+              docker logs --tail 5 desktop 2>&1 || true
+            fi
             sleep 2
           done
           curl -sf http://localhost:8080/ > /dev/null 2>&1 || { echo "TIMEOUT"; docker logs desktop; exit 1; }
@@ -75,29 +80,18 @@ jobs:
       - name: Remove Chrome download restrictions
         run: |
           POLICY='{"DownloadRestrictions":0,"SafeBrowsingProtectionLevel":0,"PromptForDownloadLocation":true,"URLAllowlist":["*"],"URLBlocklist":[]}'
-          docker exec -u root desktop bash -c "
-            rm -f /etc/opt/chrome/policies/managed/*.json 2>/dev/null || true
-            rm -f /etc/opt/chrome/policies/recommended/*.json 2>/dev/null || true
-            mkdir -p /etc/opt/chrome/policies/managed
-            echo '$POLICY' > /etc/opt/chrome/policies/managed/allow-everything.json
-            pkill -f google-chrome || true
-          "
+          docker exec -u root desktop bash -c "mkdir -p /etc/opt/chrome/policies/managed && rm -f /etc/opt/chrome/policies/managed/*.json && echo '$POLICY' > /etc/opt/chrome/policies/managed/allow-everything.json && pkill -f google-chrome || true"
           echo "Chrome download restrictions removed."
 
       - name: Install Java
         run: |
-          docker exec -u root desktop bash -c "
-            apt-get update -qq &&
-            apt-get install -y --no-install-recommends default-jdk 2>&1 | tail -3 &&
-            java -version
-          " && echo "Java ready."
+          docker exec -u root desktop bash -c "apt-get update -qq && apt-get install -y --no-install-recommends default-jdk 2>&1 | tail -3 && java -version" && echo "Java ready."
 
       - name: Open Cloudflare tunnel
         run: |
           curl -sSL -o /usr/local/bin/cloudflared \
             https://github.com/cloudflare/cloudflared/releases/download/2025.4.2/cloudflared-linux-amd64
           chmod +x /usr/local/bin/cloudflared
-
           cloudflared tunnel --no-autoupdate --url http://localhost:8080 > /tmp/cf.log 2>&1 &
 
           URL=""
@@ -108,31 +102,18 @@ jobs:
           done
           [ -z "$URL" ] && { cat /tmp/cf.log; exit 1; }
 
-          echo "TUNNEL_URL=$URL" >> $GITHUB_ENV
-          cat >> $GITHUB_STEP_SUMMARY << SUMMARY
-          # Cloud Desktop Ready
-
-          ## Connect from any device:
-          **$URL**
-
-          **Password:** cloud
-
-          - 60 FPS WebRTC stream (Shadow PC quality)
-          - Chrome downloads fully unlocked
-          - Java pre-installed (run MotiveWave .sh installer)
-          - Right-click desktop for terminal
-          - Session saved automatically on exit
-
-          Session length: ${{ inputs.hours }}h
-          SUMMARY
-
           echo "=============================="
           echo "  URL:  $URL"
           echo "  PASS: cloud"
           echo "=============================="
+          printf "# Cloud Desktop\n**URL:** %s\n**Password:** cloud\nSession: ${{ inputs.hours }}h\n" "$URL" >> $GITHUB_STEP_SUMMARY
 
       - name: Keep session alive
         run: sleep $(( ${{ inputs.hours }} * 3600 - 120 ))
+
+      - name: Fix session-state permissions before save
+        if: always()
+        run: sudo chmod -R 777 session-state 2>/dev/null || true
 
       - name: Save session state
         if: always()

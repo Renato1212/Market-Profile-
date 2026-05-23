@@ -28,10 +28,10 @@ public final class Level {
              meta, LevelStatus.NEW, 0);
     }
 
-    /** Full constructor (package-private mutation helpers use this). */
-    Level(double priceLow, double priceHigh, double rawStrength,
-          LevelType type, long timestampMillis, int barIndex,
-          Map<String, Object> meta, LevelStatus status, int touchCount) {
+    /** Full constructor — public so the engine layer can create modified copies. */
+    public Level(double priceLow, double priceHigh, double rawStrength,
+                 LevelType type, long timestampMillis, int barIndex,
+                 Map<String, Object> meta, LevelStatus status, int touchCount) {
         this.priceLow       = priceLow;
         this.priceHigh      = priceHigh;
         this.rawStrength    = rawStrength;

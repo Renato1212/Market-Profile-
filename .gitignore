@@ -52,3 +52,9 @@ logs/
 # Cache
 .cache/
 *.cache
+
+# Gradle (mw-confluence-heatmap)
+mw-confluence-heatmap/.gradle/
+mw-confluence-heatmap/build/
+mw-confluence-heatmap/*.jar
+mw-confluence-heatmap/out/

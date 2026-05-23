@@ -1,0 +1,40 @@
+plugins {
+    id 'java'
+}
+
+group = 'com.renato'
+version = '1.0.0'
+sourceCompatibility = JavaVersion.VERSION_11
+targetCompatibility = JavaVersion.VERSION_11
+
+repositories {
+    mavenCentral()
+}
+
+dependencies {
+    // MotiveWave SDK jar — place motivewave-sdk.jar at ~/MotiveWave/sdk/motivewave-sdk.jar
+    // Download from your MotiveWave installation directory.
+    compileOnly fileTree(dir: "${System.getProperty('user.home')}/MotiveWave/sdk", include: ['*.jar'])
+
+    testImplementation 'org.junit.jupiter:junit-jupiter:5.10.0'
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+}
+
+test {
+    useJUnitPlatform()
+}
+
+jar {
+    archiveFileName = 'confluence-heatmap.jar'
+    destinationDirectory = file("${System.getProperty('user.home')}/MotiveWave Extensions")
+    manifest {
+        attributes(
+            'Implementation-Title': 'Confluence Heatmap',
+            'Implementation-Version': version
+        )
+    }
+    from {
+        configurations.runtimeClasspath.collect { it.isDirectory() ? it : zipTree(it) }
+    }
+    duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+}

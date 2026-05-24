@@ -12,9 +12,15 @@ repositories {
 }
 
 dependencies {
-    // MotiveWave SDK jar — place motivewave-sdk.jar at ~/MotiveWave/sdk/motivewave-sdk.jar
-    // Download from your MotiveWave installation directory.
-    compileOnly fileTree(dir: "${System.getProperty('user.home')}/MotiveWave/sdk", include: ['*.jar'])
+    // MotiveWave SDK — prefer the real SDK jar when present, fall back to compile stubs.
+    // Real jar: place motivewave-sdk.jar at ~/MotiveWave/sdk/motivewave-sdk.jar
+    def sdkDir  = file("${System.getProperty('user.home')}/MotiveWave/sdk")
+    def stubJar = file("${projectDir}/sdk-stubs/motivewave-sdk-stubs.jar")
+    if (sdkDir.exists()) {
+        compileOnly fileTree(dir: sdkDir, include: ['*.jar'])
+    } else {
+        compileOnly files(stubJar)
+    }
 
     testImplementation 'org.junit.jupiter:junit-jupiter:5.10.0'
     testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
@@ -26,7 +32,10 @@ test {
 
 jar {
     archiveFileName = 'confluence-heatmap.jar'
-    destinationDirectory = file("${System.getProperty('user.home')}/MotiveWave Extensions")
+    // Output to releases/ in the project directory so it can be committed & downloaded.
+    // When building locally, copy this jar to ~/MotiveWave Extensions/ manually or
+    // set: destinationDirectory = file("${System.getProperty('user.home')}/MotiveWave Extensions")
+    destinationDirectory = file("${projectDir}/releases")
     manifest {
         attributes(
             'Implementation-Title': 'Confluence Heatmap',
